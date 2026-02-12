@@ -1,0 +1,37 @@
+parameters:
+- name: jdkVersion
+  type: string
+  default: '1.17'
+
+steps:
+- task: Maven@3
+  displayName: 'Maven Build & Test'
+  inputs:
+    mavenPomFile: 'pom.xml'
+    # "package" compiles code and packages it into a JAR
+    # We do NOT skip tests here; we want to fail the build if tests fail
+    goals: 'clean package' 
+    publishJUnitResults: true
+    testResultsFiles: '**/surefire-reports/TEST-*.xml'
+    javaHomeOption: 'JDKVersion'
+    jdkVersionOption: ${{ parameters.jdkVersion }}
+    mavenVersionOption: 'Default'
+    mavenAuthenticateFeed: false
+    effectivePomSkip: false
+    sonarQubeRunAnalysis: false
+
+# Copy the JAR file to a staging folder
+- task: CopyFiles@2
+  displayName: 'Copy JAR to Staging'
+  inputs:
+    SourceFolder: '$(system.defaultworkingdirectory)'
+    Contents: '**/target/*.jar'
+    TargetFolder: '$(build.artifactstagingdirectory)'
+
+# Publish the staging folder so the Deploy stages can access it
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'

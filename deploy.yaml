@@ -1,0 +1,32 @@
+parameters:
+- name: environmentName    # e.g., 'dev', 'testing', 'prod'
+- name: azureServiceConnection
+- name: webAppName         # The specific App Service name for this env
+- name: packagePath        # Path to the JAR file
+
+jobs:
+- deployment: Deploy_${{ parameters.environmentName }}
+  displayName: Deploy to ${{ parameters.environmentName }}
+  environment: ${{ parameters.environmentName }}
+  pool:
+    vmImage: 'ubuntu-latest'
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+        # 1. Download the artifact produced by the Build Stage
+        - download: current
+          artifact: drop
+
+        # 2. Deploy the JAR to Azure App Service
+        - task: AzureWebApp@1
+          displayName: 'Azure Web App Deploy: ${{ parameters.webAppName }}'
+          inputs:
+            azureSubscription: ${{ parameters.azureServiceConnection }}
+            appType: 'webAppLinux'
+            appName: ${{ parameters.webAppName }}
+            # Point to the JAR we just downloaded
+            package: '${{ parameters.packagePath }}'
+            # Start command is usually auto-detected for Spring Boot, 
+            # but we can force it if needed:
+            # startUpCommand: 'java -jar /home/site/wwwroot/*.jar'parameters:

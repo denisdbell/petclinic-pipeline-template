@@ -2,9 +2,9 @@ parameters:
 - name: jdkVersion
   type: string
   default: '1.17'
-- name: imageRepository
+- name: devAcrConnection
   type: string
-- name: imageTag
+- name: imageRepository
   type: string
 - name: sonarServiceConnection
   type: string
@@ -42,23 +42,14 @@ steps:
   inputs:
     pollingTimeoutSec: '300'
 
-# Build the image locally (Command: build, not buildAndPush)
+# Build and push directly to the Dev ACR
 - task: Docker@2
-  displayName: 'Build Docker Image'
+  displayName: 'Build and Push to Dev ACR'
   inputs:
-    command: 'build'
+    containerRegistry: ${{ parameters.devAcrConnection }}
     repository: ${{ parameters.imageRepository }}
+    command: 'buildAndPush'
     Dockerfile: '**/Dockerfile'
-    tags: ${{ parameters.imageTag }}
-
-# Export the built image to a tar file
-- script: |
-    docker save ${{ parameters.imageRepository }}:${{ parameters.imageTag }} -o $(Build.ArtifactStagingDirectory)/image.tar
-  displayName: 'Save Docker Image to Tar'
-
-# Publish the tar file so deployment stages can use it
-- task: PublishPipelineArtifact@1
-  displayName: 'Publish Docker Image Artifact'
-  inputs:
-    targetPath: '$(Build.ArtifactStagingDirectory)/image.tar'
-    artifact: 'docker-image'
+    tags: |
+      $(Build.BuildId)
+      latest

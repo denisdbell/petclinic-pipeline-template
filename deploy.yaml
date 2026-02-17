@@ -2,6 +2,7 @@ parameters:
 - name: environmentName
 - name: azureServiceConnection
 - name: webAppName
+- name: acrServiceConnection
 - name: acrLoginServer
 - name: imageRepository
 - name: imageTag
@@ -16,6 +17,15 @@ jobs:
     runOnce:
       deploy:
         steps:
+        # 1. Push the image to this specific environment's ACR
+        - template: push-acr.yaml
+          parameters:
+            acrServiceConnection: ${{ parameters.acrServiceConnection }}
+            acrLoginServer: ${{ parameters.acrLoginServer }}
+            imageRepository: ${{ parameters.imageRepository }}
+            imageTag: ${{ parameters.imageTag }}
+
+        # 2. Deploy the container to the App Service
         - task: AzureWebAppContainer@1
           displayName: 'Deploy Container to Azure Web App: ${{ parameters.webAppName }}'
           inputs:

@@ -2,10 +2,19 @@ parameters:
 - name: environmentName
 - name: azureServiceConnection
 - name: webAppName
-- name: acrServiceConnection
-- name: acrLoginServer
+- name: targetAcrConnection
+- name: targetAcrLoginServer
 - name: imageRepository
 - name: imageTag
+- name: promoteImage
+  type: boolean
+  default: false
+- name: sourceAcrConnection
+  type: string
+  default: ''
+- name: sourceAcrLoginServer
+  type: string
+  default: ''
 
 jobs:
 - deployment: Deploy_${{ parameters.environmentName }}
@@ -17,18 +26,21 @@ jobs:
     runOnce:
       deploy:
         steps:
-        # 1. Push the image to this specific environment's ACR
-        - template: push-acr.yaml
-          parameters:
-            acrServiceConnection: ${{ parameters.acrServiceConnection }}
-            acrLoginServer: ${{ parameters.acrLoginServer }}
-            imageRepository: ${{ parameters.imageRepository }}
-            imageTag: ${{ parameters.imageTag }}
+        # Conditionally run the promotion steps if promoteImage is true
+        - ${{ if eq(parameters.promoteImage, true) }}:
+          - template: promote-acr.yaml
+            parameters:
+              sourceAcrConnection: ${{ parameters.sourceAcrConnection }}
+              sourceAcrLoginServer: ${{ parameters.sourceAcrLoginServer }}
+              targetAcrConnection: ${{ parameters.targetAcrConnection }}
+              targetAcrLoginServer: ${{ parameters.targetAcrLoginServer }}
+              imageRepository: ${{ parameters.imageRepository }}
+              imageTag: ${{ parameters.imageTag }}
 
-        # 2. Deploy the container to the App Service
+        # Deploy the container to the App Service using the Target ACR
         - task: AzureWebAppContainer@1
           displayName: 'Deploy Container to Azure Web App: ${{ parameters.webAppName }}'
           inputs:
             azureSubscription: ${{ parameters.azureServiceConnection }}
             appName: ${{ parameters.webAppName }}
-            imageName: '${{ parameters.acrLoginServer }}/${{ parameters.imageRepository }}:${{ parameters.imageTag }}'
+            imageName: '${{ parameters.targetAcrLoginServer }}/${{ parameters.imageRepository }}:${{ parameters.imageTag }}'

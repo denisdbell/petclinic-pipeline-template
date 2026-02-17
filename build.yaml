@@ -2,9 +2,9 @@ parameters:
 - name: jdkVersion
   type: string
   default: '1.17'
-- name: acrServiceConnection
-  type: string
 - name: imageRepository
+  type: string
+- name: imageTag
   type: string
 - name: sonarServiceConnection
   type: string
@@ -14,7 +14,6 @@ parameters:
   type: string
 
 steps:
-# 1. Prepare SonarCloud Analysis
 - task: SonarCloudPrepare@1
   displayName: 'Prepare SonarCloud Analysis'
   inputs:
@@ -25,7 +24,6 @@ steps:
       sonar.projectKey=${{ parameters.sonarProjectKey }}
       sonar.projectName=${{ parameters.sonarProjectKey }}
 
-# 2. Maven Build & Test
 - task: Maven@3
   displayName: 'Maven Build & Test'
   inputs:
@@ -35,11 +33,7 @@ steps:
     testResultsFiles: '**/surefire-reports/TEST-*.xml'
     javaHomeOption: 'JDKVersion'
     jdkVersionOption: ${{ parameters.jdkVersion }}
-    mavenVersionOption: 'Default'
-    mavenAuthenticateFeed: false
-    effectivePomSkip: false
 
-# 3. Analyze & Publish SonarCloud Results
 - task: SonarCloudAnalyze@1
   displayName: 'Run SonarCloud Analysis'
 
@@ -48,14 +42,23 @@ steps:
   inputs:
     pollingTimeoutSec: '300'
 
-# 4. Build and Push to ACR
+# Build the image locally (Command: build, not buildAndPush)
 - task: Docker@2
-  displayName: 'Build and Push Docker Image'
+  displayName: 'Build Docker Image'
   inputs:
-    containerRegistry: ${{ parameters.acrServiceConnection }}
+    command: 'build'
     repository: ${{ parameters.imageRepository }}
-    command: 'buildAndPush'
     Dockerfile: '**/Dockerfile'
-    tags: |
-      $(Build.BuildId)
-      latest
+    tags: ${{ parameters.imageTag }}
+
+# Export the built image to a tar file
+- script: |
+    docker save ${{ parameters.imageRepository }}:${{ parameters.imageTag }} -o $(Build.ArtifactStagingDirectory)/image.tar
+  displayName: 'Save Docker Image to Tar'
+
+# Publish the tar file so deployment stages can use it
+- task: PublishPipelineArtifact@1
+  displayName: 'Publish Docker Image Artifact'
+  inputs:
+    targetPath: '$(Build.ArtifactStagingDirectory)/image.tar'
+    artifact: 'docker-image'

@@ -47,7 +47,21 @@ jobs:
             sed -i "s|#{DB_URL}#|${{ parameters.dbUrl }}|g" k8s/manifest.yaml
           displayName: 'Inject Variables into Manifest'
 
-        # Create the database password secret in the target namespace
+        # Ensure the namespace exists before deploying resources into it
+        - task: Kubernetes@1
+          displayName: 'Ensure Namespace Exists: ${{ parameters.namespace }}'
+          inputs:
+            connectionType: 'Kubernetes Service Connection'
+            kubernetesServiceEndpoint: '${{ parameters.aksServiceConnection }}'
+            command: 'apply'
+            useConfigurationFile: true
+            inline: |
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: ${{ parameters.namespace }}
+
+        # Create the database credentials secret in the target namespace
         - task: KubernetesManifest@1
           displayName: 'Create Database Secret'
           inputs:
@@ -57,7 +71,7 @@ jobs:
             namespace: '${{ parameters.namespace }}'
             secretType: 'generic'
             secretName: 'db-secret'
-            secretArguments: '--from-literal=password=${{ parameters.dbPassword }}'
+            secretArguments: '--from-literal=username=petclinic_admin --from-literal=password=${{ parameters.dbPassword }}'
 
         # Deploy the application to the AKS cluster
         - task: KubernetesManifest@1

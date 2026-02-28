@@ -1,11 +1,18 @@
 parameters:
 - name: environmentName
+  type: string
 - name: namespace
+  type: string
 - name: aksServiceConnection
+  type: string
 - name: targetAcrConnection
+  type: string
 - name: targetAcrLoginServer
+  type: string
 - name: imageRepository
+  type: string
 - name: imageTag
+  type: string
 - name: promoteImage
   type: boolean
   default: false
@@ -21,8 +28,29 @@ parameters:
   type: string
 
 jobs:
+# ── Job 1: Check out the repo, inject variables, publish manifest as artifact ──
+- job: Prepare_${{ parameters.environmentName }}
+  displayName: 'Prepare Manifest for ${{ parameters.environmentName }}'
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  - checkout: self
+
+  - script: |
+      sed -i "s|#{IMAGE_URL}#|${{ parameters.targetAcrLoginServer }}/${{ parameters.imageRepository }}:${{ parameters.imageTag }}|g" k8s/manifest.yaml
+      sed -i "s|#{DB_URL}#|${{ parameters.dbUrl }}|g" k8s/manifest.yaml
+      echo "Manifest after substitution:"
+      cat k8s/manifest.yaml
+    displayName: 'Inject Variables into Manifest'
+
+  - publish: k8s/manifest.yaml
+    artifact: manifest-${{ parameters.environmentName }}
+    displayName: 'Publish Manifest Artifact'
+
+# ── Job 2: Promote image (optional) then deploy to AKS ────────────────────────
 - deployment: Deploy_${{ parameters.environmentName }}
-  displayName: Deploy to ${{ parameters.environmentName }}
+  displayName: 'Deploy to ${{ parameters.environmentName }}'
+  dependsOn: Prepare_${{ parameters.environmentName }}
   environment: ${{ parameters.environmentName }}
   pool:
     vmImage: 'ubuntu-latest'
@@ -30,7 +58,7 @@ jobs:
     runOnce:
       deploy:
         steps:
-        # Conditionally run the promotion steps if promoteImage is true
+        # Conditionally promote the image between ACRs
         - ${{ if eq(parameters.promoteImage, true) }}:
           - template: promote-acr.yaml
             parameters:
@@ -41,11 +69,10 @@ jobs:
               imageRepository: ${{ parameters.imageRepository }}
               imageTag: ${{ parameters.imageTag }}
 
-        # Replace placeholders in the manifest with actual variables
-        - script: |
-            sed -i "s|#{IMAGE_URL}#|${{ parameters.targetAcrLoginServer }}/${{ parameters.imageRepository }}:${{ parameters.imageTag }}|g" k8s/manifest.yaml
-            sed -i "s|#{DB_URL}#|${{ parameters.dbUrl }}|g" k8s/manifest.yaml
-          displayName: 'Inject Variables into Manifest'
+        # Download the manifest artifact published by the Prepare job
+        - download: current
+          artifact: manifest-${{ parameters.environmentName }}
+          displayName: 'Download Manifest Artifact'
 
         # Ensure the namespace exists before deploying resources into it
         - task: Kubernetes@1
@@ -73,7 +100,7 @@ jobs:
             secretName: 'db-secret'
             secretArguments: '--from-literal=username=petclinic_admin --from-literal=password=${{ parameters.dbPassword }}'
 
-        # Deploy the application to the AKS cluster
+        # Deploy using the artifact path where the manifest was downloaded
         - task: KubernetesManifest@1
           displayName: 'Deploy to AKS Namespace: ${{ parameters.namespace }}'
           inputs:
@@ -81,4 +108,4 @@ jobs:
             connectionType: 'kubernetesServiceConnection'
             kubernetesServiceConnection: '${{ parameters.aksServiceConnection }}'
             namespace: '${{ parameters.namespace }}'
-            manifests: 'k8s/manifest.yaml'
+            manifests: '$(Pipeline.Workspace)/manifest-${{ parameters.environmentName }}/manifest.yaml'

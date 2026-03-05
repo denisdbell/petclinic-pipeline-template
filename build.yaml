@@ -1,37 +1,36 @@
 parameters:
-- name: jdkVersion
-  type: string
-  default: '1.17'
+  - name: jdkVersion
+    type: string
+    default: '1.17'
+  - name: serviceName
+    type: string
+  - name: devAcrConnection
+    type: string
+  - name: imageRepository
+    type: string
 
 steps:
-- task: Maven@3
+# 1. Maven Build & Test
+- task: Maven@4
   displayName: 'Maven Build & Test'
   inputs:
     mavenPomFile: 'pom.xml'
-    # "package" compiles code and packages it into a JAR
-    # We do NOT skip tests here; we want to fail the build if tests fail
-    goals: 'clean package' 
+    goals: 'clean package'
+    options: '-pl ${{ parameters.serviceName }} -am'
     publishJUnitResults: true
     testResultsFiles: '**/surefire-reports/TEST-*.xml'
     javaHomeOption: 'JDKVersion'
     jdkVersionOption: ${{ parameters.jdkVersion }}
-    mavenVersionOption: 'Default'
-    mavenAuthenticateFeed: false
-    effectivePomSkip: false
-    sonarQubeRunAnalysis: false
 
-# Copy the JAR file to a staging folder
-- task: CopyFiles@2
-  displayName: 'Copy JAR to Staging'
+# 2. Build and Push directly to the Dev ACR
+- task: Docker@2
+  displayName: 'Build and Push to Dev ACR'
   inputs:
-    SourceFolder: '$(system.defaultworkingdirectory)'
-    Contents: '**/target/*.jar'
-    TargetFolder: '$(build.artifactstagingdirectory)'
-
-# Publish the staging folder so the Deploy stages can access it
-- task: PublishBuildArtifacts@1
-  displayName: 'Publish Artifact'
-  inputs:
-    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-    ArtifactName: 'drop'
-    publishLocation: 'Container'
+    containerRegistry: ${{ parameters.devAcrConnection }}
+    repository: ${{ parameters.imageRepository }}
+    command: 'buildAndPush'
+    Dockerfile: '${{ parameters.serviceName }}/Dockerfile'
+    buildContext: '.'
+    tags: |
+      $(Build.BuildId)
+      latest
